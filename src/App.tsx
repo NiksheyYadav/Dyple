@@ -1,6 +1,6 @@
 // @ts-nocheck
-import { Brain, Database, Pause, Play, Plus, RotateCcw, Settings, Trash2, TrendingUp, Zap } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Brain, Database, Pause, Play, Plus, RotateCcw, Settings, Sparkles, Target, Trash2, TrendingUp, Zap } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 
 // Activation functions with their derivatives
 const activations = {
@@ -88,6 +88,106 @@ class Adam extends Optimizer {
   }
 }
 
+class RMSprop extends Optimizer {
+  constructor(params, lr = 0.001, decay = 0.9, epsilon = 1e-8) {
+    super(params);
+    this.lr = lr;
+    this.decay = decay;
+    this.epsilon = epsilon;
+    this.cache = params.map(p => p.map(() => 0));
+  }
+
+  step(grads) {
+    this.params.forEach((param, i) => {
+      param.forEach((w, j) => {
+        this.cache[i][j] = this.decay * this.cache[i][j] + (1 - this.decay) * grads[i][j] ** 2;
+        param[j] -= this.lr * grads[i][j] / (Math.sqrt(this.cache[i][j]) + this.epsilon);
+      });
+    });
+  }
+}
+
+class Adagrad extends Optimizer {
+  constructor(params, lr = 0.01, epsilon = 1e-8) {
+    super(params);
+    this.lr = lr;
+    this.epsilon = epsilon;
+    this.cache = params.map(p => p.map(() => 0));
+  }
+
+  step(grads) {
+    this.params.forEach((param, i) => {
+      param.forEach((w, j) => {
+        this.cache[i][j] += grads[i][j] ** 2;
+        param[j] -= this.lr * grads[i][j] / (Math.sqrt(this.cache[i][j]) + this.epsilon);
+      });
+    });
+  }
+}
+
+class AdamW extends Optimizer {
+  constructor(params, lr = 0.001, beta1 = 0.9, beta2 = 0.999, epsilon = 1e-8, weightDecay = 0.01) {
+    super(params);
+    this.lr = lr;
+    this.beta1 = beta1;
+    this.beta2 = beta2;
+    this.epsilon = epsilon;
+    this.weightDecay = weightDecay;
+    this.t = 0;
+    this.m = params.map(p => p.map(() => 0));
+    this.v = params.map(p => p.map(() => 0));
+  }
+
+  step(grads) {
+    this.t += 1;
+    this.params.forEach((param, i) => {
+      param.forEach((w, j) => {
+        // Weight decay
+        param[j] -= this.lr * this.weightDecay * param[j];
+        
+        this.m[i][j] = this.beta1 * this.m[i][j] + (1 - this.beta1) * grads[i][j];
+        this.v[i][j] = this.beta2 * this.v[i][j] + (1 - this.beta2) * grads[i][j] ** 2;
+        
+        const mHat = this.m[i][j] / (1 - this.beta1 ** this.t);
+        const vHat = this.v[i][j] / (1 - this.beta2 ** this.t);
+        
+        param[j] -= this.lr * mHat / (Math.sqrt(vHat) + this.epsilon);
+      });
+    });
+  }
+}
+
+class Nadam extends Optimizer {
+  constructor(params, lr = 0.001, beta1 = 0.9, beta2 = 0.999, epsilon = 1e-8) {
+    super(params);
+    this.lr = lr;
+    this.beta1 = beta1;
+    this.beta2 = beta2;
+    this.epsilon = epsilon;
+    this.t = 0;
+    this.m = params.map(p => p.map(() => 0));
+    this.v = params.map(p => p.map(() => 0));
+  }
+
+  step(grads) {
+    this.t += 1;
+    this.params.forEach((param, i) => {
+      param.forEach((w, j) => {
+        this.m[i][j] = this.beta1 * this.m[i][j] + (1 - this.beta1) * grads[i][j];
+        this.v[i][j] = this.beta2 * this.v[i][j] + (1 - this.beta2) * grads[i][j] ** 2;
+        
+        const mHat = this.m[i][j] / (1 - this.beta1 ** this.t);
+        const vHat = this.v[i][j] / (1 - this.beta2 ** this.t);
+        
+        // Nesterov momentum
+        const mNesterov = this.beta1 * mHat + (1 - this.beta1) * grads[i][j] / (1 - this.beta1 ** this.t);
+        
+        param[j] -= this.lr * mNesterov / (Math.sqrt(vHat) + this.epsilon);
+      });
+    });
+  }
+}
+
 const DeeplexLearningPlatform = () => {
   // Network architecture configuration
   const [layers, setLayers] = useState([
@@ -102,6 +202,20 @@ const DeeplexLearningPlatform = () => {
     { input: [0.2, 0.8], target: [0.5] },
     { input: [0.9, 0.1], target: [0.8] },
     { input: [0.3, 0.6], target: [0.4] }
+  ]);
+  
+  // Dataset loading
+  const [selectedDataset, setSelectedDataset] = useState('');
+  const [datasetInfo, setDatasetInfo] = useState(null);
+  const [availableDatasets, setAvailableDatasets] = useState([
+    { id: 'regression_small', name: 'Regression (Small)', description: '500 samples, 2 inputs, 1 output' },
+    { id: 'regression_large', name: 'Regression (Large)', description: '2000 samples, 3 inputs, 1 output' },
+    { id: 'classification_binary', name: 'Binary Classification', description: '1000 samples, 2 inputs, 2 classes' },
+    { id: 'classification_3class', name: '3-Class Classification', description: '1500 samples, 2 inputs, 3 classes' },
+    { id: 'xor_problem', name: 'XOR Problem', description: '400 samples, classic XOR' },
+    { id: 'sin_wave', name: 'Sin Wave Prediction', description: '800 samples, sine wave pattern' },
+    { id: 'polynomial', name: 'Polynomial Regression', description: '700 samples, degree 3 polynomial' },
+    { id: 'multi_output', name: 'Multi-Output', description: '1000 samples, 4 inputs, 2 outputs' }
   ]);
 
   // Network parameters
@@ -122,9 +236,32 @@ const DeeplexLearningPlatform = () => {
   const [lossHistory, setLossHistory] = useState([]);
   const [activations, setActivations] = useState([]);
   const [currentBatch, setCurrentBatch] = useState(0);
+  const [trainingLogs, setTrainingLogs] = useState([]);
+  const [showDatasetPreview, setShowDatasetPreview] = useState(false);
+  const [samplesProcessed, setSamplesProcessed] = useState(0);
+  const [bestLoss, setBestLoss] = useState(Infinity);
+  const [trainLoss, setTrainLoss] = useState(null);
+  const [valLoss, setValLoss] = useState(null);
+  const [trainAccuracy, setTrainAccuracy] = useState(0);
+  const [valAccuracy, setValAccuracy] = useState(0);
+  const [confusionMatrix, setConfusionMatrix] = useState([]);
+  const [targetEpochs, setTargetEpochs] = useState(100);
+  const [suggestedArchitecture, setSuggestedArchitecture] = useState(null);
   
   const optimizerRef = useRef(null);
   const intervalRef = useRef(null);
+  const logsEndRef = useRef(null);
+
+  // Add training log
+  const addLog = (message, type = 'info') => {
+    const timestamp = new Date().toLocaleTimeString();
+    setTrainingLogs(prev => [...prev.slice(-99), { timestamp, message, type }]);
+  };
+
+  // Scroll to bottom of logs
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [trainingLogs]);
 
   // Initialize network weights based on architecture
   const initializeNetwork = () => {
@@ -157,6 +294,13 @@ const DeeplexLearningPlatform = () => {
     setEpochs(0);
     setLossHistory([]);
     setCurrentLoss(null);
+    setSamplesProcessed(0);
+    setBestLoss(Infinity);
+    setTrainLoss(null);
+    setValLoss(null);
+    setTrainAccuracy(0);
+    setValAccuracy(0);
+    setConfusionMatrix([]);
     
     // Reinitialize optimizer with new parameters
     const allParams = [...newWeights, ...newBiases];
@@ -164,7 +308,18 @@ const DeeplexLearningPlatform = () => {
       optimizerRef.current = new SGD(allParams, learningRate, momentum);
     } else if (optimizer === 'adam') {
       optimizerRef.current = new Adam(allParams, learningRate);
+    } else if (optimizer === 'rmsprop') {
+      optimizerRef.current = new RMSprop(allParams, learningRate);
+    } else if (optimizer === 'adagrad') {
+      optimizerRef.current = new Adagrad(allParams, learningRate);
+    } else if (optimizer === 'adamw') {
+      optimizerRef.current = new AdamW(allParams, learningRate);
+    } else if (optimizer === 'nadam') {
+      optimizerRef.current = new Nadam(allParams, learningRate);
     }
+    
+    addLog(`Network initialized with ${layers.length} layers`, 'success');
+    addLog(`Optimizer: ${optimizer.toUpperCase()}, Learning Rate: ${learningRate}`, 'info');
   };
 
   // Forward pass through the network
@@ -276,6 +431,63 @@ const DeeplexLearningPlatform = () => {
     return { weightsGrads, biasesGrads };
   };
 
+  // Calculate accuracy and confusion matrix
+  const calculateMetrics = (data, isValidation = false) => {
+    if (!data || data.length === 0) return { accuracy: 0, loss: 0 };
+    
+    let correct = 0;
+    let totalLoss = 0;
+    const outputSize = layers[layers.length - 1].size;
+    const isClassification = outputSize > 1;
+    
+    // Initialize confusion matrix for classification
+    const matrix = isClassification ? Array(outputSize).fill(0).map(() => Array(outputSize).fill(0)) : [];
+    
+    data.forEach(point => {
+      const forward = forwardPass(point.input);
+      const prediction = forward.activations[forward.activations.length - 1] || [];
+      const target = point.target;
+      
+      // Calculate loss
+      const loss = prediction.reduce((sum, p, i) => sum + (p - (target[i] || 0)) ** 2, 0) / prediction.length;
+      totalLoss += loss;
+      
+      if (isClassification) {
+        // For classification: argmax
+        const predictedClass = prediction.indexOf(Math.max(...prediction));
+        const actualClass = target.indexOf(Math.max(...target));
+        
+        if (predictedClass === actualClass) correct++;
+        
+        // Update confusion matrix
+        if (matrix[actualClass] && matrix[actualClass][predictedClass] !== undefined) {
+          matrix[actualClass][predictedClass]++;
+        }
+      } else {
+        // For regression: consider within 10% as correct
+        const error = Math.abs(prediction[0] - target[0]);
+        if (error < 0.1) correct++;
+      }
+    });
+    
+    const accuracy = (correct / data.length) * 100;
+    const avgLoss = totalLoss / data.length;
+    
+    if (isValidation) {
+      setValAccuracy(accuracy);
+      setValLoss(avgLoss);
+    } else {
+      setTrainAccuracy(accuracy);
+      setTrainLoss(avgLoss);
+    }
+    
+    if (isClassification && !isValidation) {
+      setConfusionMatrix(matrix);
+    }
+    
+    return { accuracy, loss: avgLoss };
+  };
+  
   // Training step with mini-batch
   const trainStep = () => {
     if (weights.length === 0 || biases.length === 0 || dataPoints.length === 0) {
@@ -318,10 +530,8 @@ const DeeplexLearningPlatform = () => {
         });
       });
       
-      // Store activations from first sample for visualization
-      if (idx === batchIndices[0]) {
-        setActivations(forward.activations);
-      }
+      // Store activations for visualization (update on every sample for smooth animation)
+      setActivations(forward.activations);
     });
     
     // Average gradients over batch
@@ -337,7 +547,32 @@ const DeeplexLearningPlatform = () => {
     const avgLoss = totalLoss / batchSizeActual;
     setCurrentLoss(avgLoss);
     setLossHistory(h => [...h.slice(-199), avgLoss]);
-    setEpochs(e => e + 1);
+    setSamplesProcessed(s => s + batchSizeActual);
+    
+    // Track best loss
+    if (avgLoss < bestLoss) {
+      setBestLoss(avgLoss);
+    }
+    
+    const newEpoch = epochs + 1;
+    setEpochs(newEpoch);
+    
+    // Auto-stop training if target epochs reached
+    if (targetEpochs > 0 && newEpoch >= targetEpochs) {
+      setIsTraining(false);
+      addLog(`🎯 Reached target of ${targetEpochs} epochs! Training stopped.`, 'success');
+    }
+    
+    // Calculate train/val metrics every 10 epochs
+    if (newEpoch % 10 === 0) {
+      const valData = dataPoints.slice(0, Math.max(5, Math.floor(dataPoints.length * 0.2)));
+      const trainData = dataPoints.slice(Math.max(5, Math.floor(dataPoints.length * 0.2)));
+      
+      calculateMetrics(trainData, false);
+      calculateMetrics(valData, true);
+      
+      addLog(`Epoch ${newEpoch}: Loss = ${avgLoss.toFixed(6)}, Best = ${Math.min(avgLoss, bestLoss).toFixed(6)}`, avgLoss < 0.01 ? 'success' : 'info');
+    }
     
     return avgLoss;
   };
@@ -347,9 +582,13 @@ const DeeplexLearningPlatform = () => {
     if (weights.length === 0 || biases.length === 0) {
       initializeNetwork();
       // Set a small delay to ensure state updates before starting training
-      setTimeout(() => setIsTraining(true), 100);
+      setTimeout(() => {
+        setIsTraining(true);
+        addLog('Training started', 'success');
+      }, 100);
     } else {
       setIsTraining(!isTraining);
+      addLog(isTraining ? 'Training paused' : 'Training resumed', 'warning');
     }
   };
 
@@ -357,9 +596,18 @@ const DeeplexLearningPlatform = () => {
   useEffect(() => {
     if (isTraining && weights.length > 0) {
       intervalRef.current = setInterval(() => {
-        const loss = trainStep();
-        if (loss < 0.0001) {
+        // Run multiple training steps per interval for faster learning
+        const stepsPerInterval = Math.max(1, Math.floor(speed / 20));
+        let avgLoss = 0;
+        
+        for (let i = 0; i < stepsPerInterval; i++) {
+          avgLoss += trainStep();
+        }
+        avgLoss /= stepsPerInterval;
+        
+        if (avgLoss < 0.0001) {
           setIsTraining(false);
+          addLog(`Training converged! Final loss: ${avgLoss.toFixed(8)}`, 'success');
         }
       }, 101 - speed);
     } else {
@@ -373,6 +621,23 @@ const DeeplexLearningPlatform = () => {
       }
     };
   }, [isTraining, speed, weights, biases, optimizer, learningRate, momentum, batchSize, dataPoints]);
+
+  // Generate synthetic dataset
+  const generateSyntheticDataset = () => {
+    const numSamples = Math.floor(Math.random() * 20) + 10; // 10-30 samples
+    const inputSize = layers[0].size;
+    const outputSize = layers[layers.length - 1].size;
+    
+    const newData = [];
+    for (let i = 0; i < numSamples; i++) {
+      const input = Array(inputSize).fill(0).map(() => Math.random());
+      const target = Array(outputSize).fill(0).map(() => Math.random());
+      newData.push({ input, target });
+    }
+    
+    setDataPoints(newData);
+    addLog(`Generated ${numSamples} synthetic data samples`, 'success');
+  };
 
   // Add layer
   const addLayer = () => {
@@ -412,8 +677,121 @@ const DeeplexLearningPlatform = () => {
     }]);
   };
 
+  // Suggest network architecture based on dataset
+  const suggestArchitecture = (inputSize, outputSize, numSamples) => {
+    const isClassification = outputSize >= 2 && datasetId && datasetId.includes('classification');
+    
+    // Heuristic: hidden layer size based on input/output
+    const avgSize = Math.ceil((inputSize + outputSize) / 2);
+    const hiddenSize1 = Math.max(4, Math.min(32, avgSize * 2));
+    const hiddenSize2 = Math.max(4, Math.min(16, avgSize));
+    
+    const suggested = [
+      { size: inputSize, activation: 'linear', type: 'input' },
+      { size: hiddenSize1, activation: 'relu', type: 'hidden' },
+      { size: hiddenSize2, activation: 'relu', type: 'hidden' },
+      { size: outputSize, activation: isClassification ? 'sigmoid' : 'linear', type: 'output' }
+    ];
+    
+    setSuggestedArchitecture({
+      layers: suggested,
+      reasoning: `Based on ${inputSize} inputs and ${outputSize} outputs with ${numSamples} samples, we recommend:
+      • Input layer: ${inputSize} neurons
+      • Hidden layer 1: ${hiddenSize1} neurons (ReLU) - captures complex patterns
+      • Hidden layer 2: ${hiddenSize2} neurons (ReLU) - refines features
+      • Output layer: ${outputSize} neurons (${isClassification ? 'Sigmoid for classification' : 'Linear for regression'})`
+    });
+    
+    return suggested;
+  };
+  
+  // Apply suggested architecture
+  const applySuggestedArchitecture = () => {
+    if (suggestedArchitecture) {
+      setLayers(suggestedArchitecture.layers);
+      addLog('Applied suggested architecture', 'success');
+      setTimeout(() => initializeNetwork(), 100);
+    }
+  };
+  
+  // Load dataset from JSON file
+  const loadDataset = async (datasetId) => {
+    if (!datasetId) {
+      setSelectedDataset('');
+      setDatasetInfo(null);
+      return;
+    }
+    
+    try {
+      addLog(`Loading dataset: ${datasetId}...`, 'info');
+      const response = await fetch(`/datasets/${datasetId}.json`);
+      
+      if (!response.ok) {
+        throw new Error('Dataset not found');
+      }
+      
+      const data = await response.json();
+      
+      // Handle both formats: plain array or object with data/metadata
+      let dataPoints, metadata;
+      
+      if (Array.isArray(data)) {
+        // Plain array format - create metadata from dataset info
+        dataPoints = data;
+        const datasetInfo = availableDatasets.find(ds => ds.id === datasetId);
+        metadata = {
+          name: datasetInfo?.name || datasetId,
+          description: datasetInfo?.description || 'Dataset',
+          samples: data.length,
+          input_size: data[0]?.input?.length || 0,
+          output_size: data[0]?.target?.length || 0
+        };
+      } else {
+        // Object format with data and metadata
+        dataPoints = data.data;
+        metadata = data.metadata;
+      }
+      
+      // Validate dataset structure
+      if (!dataPoints || !Array.isArray(dataPoints) || dataPoints.length === 0) {
+        throw new Error('Invalid dataset format - empty or not an array');
+      }
+      
+      if (!dataPoints[0].input || !dataPoints[0].target) {
+        throw new Error('Dataset samples missing input or target fields');
+      }
+      
+      setDataPoints(dataPoints);
+      setDatasetInfo(metadata);
+      setSelectedDataset(datasetId);
+      addLog(`✓ Loaded ${dataPoints.length} samples from ${metadata.name}`, 'success');
+      
+      // Auto-adjust network architecture based on dataset
+      const inputSize = dataPoints[0].input.length;
+      const outputSize = dataPoints[0].target.length;
+      
+      // Update layers to match dataset dimensions
+      const newLayers = [
+        { size: inputSize, activation: 'linear', type: 'input' },
+        ...layers.slice(1, -1), // Keep hidden layers
+        { size: outputSize, activation: layers[layers.length - 1].activation, type: 'output' }
+      ];
+      
+      setLayers(newLayers);
+      addLog(`Network adjusted: ${inputSize} inputs → ${outputSize} outputs`, 'info');
+      
+      // Suggest optimal architecture
+      suggestArchitecture(inputSize, outputSize, dataPoints.length);
+      
+    } catch (error) {
+      addLog(`✗ Failed to load dataset: ${error.message}`, 'error');
+      console.error('Dataset load error:', error);
+    }
+  };
+
   // Update data point
   const updateDataPoint = (index, field, valueIndex, value) => {
+    if (!dataPoints) return;
     const newDataPoints = [...dataPoints];
     newDataPoints[index][field][valueIndex] = parseFloat(value) || 0;
     setDataPoints(newDataPoints);
@@ -421,7 +799,7 @@ const DeeplexLearningPlatform = () => {
 
   // Remove data point
   const removeDataPoint = (index) => {
-    if (dataPoints.length <= 1) return;
+    if (!dataPoints || dataPoints.length <= 1) return;
     setDataPoints(dataPoints.filter((_, i) => i !== index));
   };
 
@@ -431,56 +809,91 @@ const DeeplexLearningPlatform = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-3 sm:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
+        <div className="mb-6 sm:mb-8">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
             <div className="flex items-center gap-3">
-              <Brain className="w-12 h-12 text-purple-400" />
+              <Brain className="w-10 h-10 sm:w-12 sm:h-12 text-purple-400" />
               <div>
-                <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+                <h1 className="text-2xl sm:text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
                   Deeplex Learning Platform
                 </h1>
-                <p className="text-purple-300 text-sm mt-1">
+                <p className="text-purple-300 text-xs sm:text-sm mt-1">
                   Configure, train, and visualize neural networks with complete control
                 </p>
               </div>
             </div>
             
-            <div className="flex gap-3">
+            <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
               <button
                 onClick={toggleTraining}
-                disabled={dataPoints.length === 0}
+                disabled={!dataPoints || dataPoints.length === 0}
                 className={`${
                   isTraining 
                     ? 'bg-red-600 hover:bg-red-700' 
                     : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700'
-                } disabled:opacity-50 disabled:cursor-not-allowed rounded-lg px-6 py-3 font-semibold flex items-center gap-2 transition-all shadow-lg`}
+                } disabled:opacity-50 disabled:cursor-not-allowed rounded-lg px-4 sm:px-6 py-2 sm:py-3 font-semibold flex items-center justify-center gap-2 transition-all shadow-lg flex-1 sm:flex-none text-sm sm:text-base`}
               >
-                {isTraining ? <><Pause className="w-5 h-5" /> Pause</> : <><Play className="w-5 h-5" /> Train</>}
+                {isTraining ? <><Pause className="w-4 h-4 sm:w-5 sm:h-5" /> Pause</> : <><Play className="w-4 h-4 sm:w-5 sm:h-5" /> Train</>}
               </button>
               <button
                 onClick={initializeNetwork}
-                className="bg-indigo-600 hover:bg-indigo-700 rounded-lg px-6 py-3 font-semibold flex items-center gap-2 transition-all"
+                className="bg-indigo-600 hover:bg-indigo-700 rounded-lg px-4 sm:px-6 py-2 sm:py-3 font-semibold flex items-center justify-center gap-2 transition-all flex-1 sm:flex-none text-sm sm:text-base"
               >
-                <RotateCcw className="w-5 h-5" /> Reset
+                <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" /> Reset
               </button>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {/* Configuration Panel */}
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
+            {/* Architecture Suggestion Panel */}
+            {suggestedArchitecture && (
+              <div className="bg-gradient-to-br from-purple-600/20 to-pink-600/20 backdrop-blur-lg rounded-xl p-4 border border-purple-500/40">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-purple-300" />
+                    <h3 className="text-sm font-bold text-purple-200">Suggested Architecture</h3>
+                  </div>
+                  <button
+                    onClick={applySuggestedArchitecture}
+                    className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-1 rounded-lg font-semibold transition-all flex items-center gap-1"
+                  >
+                    <Zap className="w-3 h-3" />
+                    Apply
+                  </button>
+                </div>
+                
+                <div className="text-xs text-purple-100 leading-relaxed whitespace-pre-line mb-3">
+                  {suggestedArchitecture.reasoning}
+                </div>
+                
+                <div className="flex flex-wrap gap-2">
+                  {suggestedArchitecture.layers.map((layer, i) => (
+                    <div 
+                      key={i}
+                      className="bg-purple-900/30 border border-purple-500/30 rounded-lg px-2 py-1 text-xs"
+                    >
+                      <span className="text-purple-300 font-semibold">{layer.size}</span>
+                      <span className="text-purple-400 ml-1">({layer.activation})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
             {/* Architecture Configuration */}
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-5 border border-white/20">
-              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                <Settings className="w-5 h-5 text-blue-400" />
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 sm:p-5 border border-white/20">
+              <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-2">
+                <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
                 Network Architecture
               </h2>
               
-              <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+              <div className="space-y-3 max-h-96 pr-2" style={{overflowY: 'auto', overflowX: 'visible'}}>
                 {layers.map((layer, idx) => (
                   <div key={idx} className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
                     <div className="flex items-center justify-between mb-2">
@@ -508,23 +921,24 @@ const DeeplexLearningPlatform = () => {
                           max="20"
                           value={layer.size}
                           onChange={(e) => updateLayer(idx, 'size', parseInt(e.target.value) || 1)}
-                          disabled={layer.type === 'input' || isTraining}
-                          className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-sm disabled:opacity-50"
+                          disabled={isTraining}
+                          className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-sm disabled:opacity-50 text-white"
                         />
                       </div>
                       
                       {layer.type !== 'input' && (
                         <div>
-                          <label className="text-xs text-slate-400 block mb-1">Activation</label>
+                          <label className="text-xs sm:text-sm text-slate-300 block mb-2">Activation</label>
                           <select
                             value={layer.activation}
                             onChange={(e) => updateLayer(idx, 'activation', e.target.value)}
                             disabled={isTraining}
-                            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-1.5 text-sm disabled:opacity-50"
+                            className="w-full bg-slate-900 border border-slate-600 rounded px-2 sm:px-3 py-2 text-xs sm:text-sm disabled:opacity-50"
                           >
-                            {Object.entries(activations).map(([key, act]) => (
-                              <option key={key} value={key}>{act.name}</option>
-                            ))}
+                            <option value="relu">ReLU</option>
+                            <option value="sigmoid">Sigmoid</option>
+                            <option value="tanh">Tanh</option>
+                            <option value="linear">Linear</option>
                           </select>
                         </div>
                       )}
@@ -543,15 +957,15 @@ const DeeplexLearningPlatform = () => {
             </div>
 
             {/* Optimizer Configuration */}
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-5 border border-white/20">
-              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                <Zap className="w-5 h-5 text-yellow-400" />
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 sm:p-5 border border-white/20">
+              <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-2">
+                <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-400" />
                 Optimizer Settings
               </h2>
               
               <div className="space-y-3">
                 <div>
-                  <label className="text-sm text-slate-300 block mb-2">Optimizer</label>
+                  <label className="text-xs sm:text-sm text-slate-300 block mb-2">Optimizer</label>
                   <select
                     value={optimizer}
                     onChange={(e) => {
@@ -559,15 +973,19 @@ const DeeplexLearningPlatform = () => {
                       initializeNetwork();
                     }}
                     disabled={isTraining}
-                    className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm disabled:opacity-50"
+                    className="w-full bg-slate-900 border border-slate-600 rounded px-2 sm:px-3 py-2 text-xs sm:text-sm disabled:opacity-50"
                   >
-                    <option value="sgd">SGD</option>
-                    <option value="adam">Adam</option>
+                    <option value="sgd">SGD - Stochastic Gradient Descent</option>
+                    <option value="adam">Adam - Adaptive Moment Estimation</option>
+                    <option value="rmsprop">RMSprop - Root Mean Square Propagation</option>
+                    <option value="adagrad">Adagrad - Adaptive Gradient</option>
+                    <option value="adamw">AdamW - Adam with Weight Decay</option>
+                    <option value="nadam">Nadam - Nesterov Adam</option>
                   </select>
                 </div>
                 
                 <div>
-                  <label className="text-sm text-slate-300 block mb-2">
+                  <label className="text-xs sm:text-sm text-slate-300 block mb-2">
                     Learning Rate: {learningRate.toFixed(4)}
                   </label>
                   <input
@@ -613,13 +1031,19 @@ const DeeplexLearningPlatform = () => {
                   <input
                     type="range"
                     min="1"
-                    max={Math.max(1, dataPoints.length)}
+                    max="1024"
                     step="1"
-                    value={Math.min(batchSize, dataPoints.length)}
+                    value={Math.min(batchSize, 1024)}
                     onChange={(e) => setBatchSize(parseInt(e.target.value))}
                     disabled={isTraining}
                     className="w-full"
                   />
+                  <div className="flex justify-between text-xs text-slate-500 mt-1">
+                    <span>1</span>
+                    <span>256</span>
+                    <span>512</span>
+                    <span>1024</span>
+                  </div>
                 </div>
                 
                 <div>
@@ -636,6 +1060,26 @@ const DeeplexLearningPlatform = () => {
                     className="w-full"
                   />
                 </div>
+                
+                <div>
+                  <label className="text-sm text-slate-300 block mb-2">
+                    Target Epochs: {targetEpochs === 0 ? 'Unlimited' : targetEpochs}
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1000"
+                    step="50"
+                    value={targetEpochs}
+                    onChange={(e) => setTargetEpochs(parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-slate-500 mt-1">
+                    <span>Unlimited</span>
+                    <span>500</span>
+                    <span>1000</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -646,14 +1090,53 @@ const DeeplexLearningPlatform = () => {
                 Training Data
               </h2>
               
+              {/* Dataset Selector */}
+              <div className="mb-4 p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Load Sample Dataset
+                </label>
+                <select
+                  value={selectedDataset}
+                  onChange={(e) => loadDataset(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="">Manual Entry (Current)</option>
+                  {availableDatasets.map(ds => (
+                    <option key={ds.id} value={ds.id}>
+                      {ds.name} - {ds.description}
+                    </option>
+                  ))}
+                </select>
+                
+                {datasetInfo && (
+                  <div className="mt-3 p-3 bg-purple-900/20 border border-purple-500/30 rounded-lg">
+                    <div className="text-xs space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Dataset:</span>
+                        <span className="text-purple-300 font-medium">{datasetInfo.name}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Samples:</span>
+                        <span className="text-white font-mono">{datasetInfo.samples}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Dimensions:</span>
+                        <span className="text-white font-mono">{datasetInfo.input_size} → {datasetInfo.output_size}</span>
+                      </div>
+                      <p className="text-slate-300 text-xs mt-2 italic">{datasetInfo.description}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
               <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
-                {dataPoints.map((point, idx) => (
+                {dataPoints && dataPoints.map((point, idx) => (
                   <div key={idx} className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium text-slate-400">Sample {idx + 1}</span>
                       <button
                         onClick={() => removeDataPoint(idx)}
-                        disabled={dataPoints.length <= 1}
+                        disabled={!dataPoints || dataPoints.length <= 1}
                         className="text-red-400 hover:text-red-300 transition-colors disabled:opacity-30"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -702,59 +1185,164 @@ const DeeplexLearningPlatform = () => {
           </div>
 
           {/* Visualization Panel */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Metrics */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-gradient-to-br from-purple-600/20 to-purple-800/20 backdrop-blur-lg rounded-xl p-5 border border-purple-500/30">
-                <div className="text-sm text-purple-300 mb-1">Epoch</div>
-                <div className="text-3xl font-bold">{epochs}</div>
+          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+            {/* Overall Progress Bar */}
+            {isTraining && targetEpochs > 0 && (
+              <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-semibold text-white">Overall Training Progress</span>
+                  <span className="text-xs text-slate-300">
+                    {Math.min(Math.floor((epochs / targetEpochs) * 100), 100)}%
+                  </span>
+                </div>
+                <div className="w-full bg-slate-700/50 rounded-full h-3 overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 transition-all duration-500"
+                    style={{ width: `${Math.min((epochs / targetEpochs) * 100, 100)}%` }}
+                  ></div>
+                </div>
+                <div className="flex justify-between text-xs text-slate-400 mt-1">
+                  <span>Epoch {epochs} / {targetEpochs}</span>
+                  <span>{samplesProcessed.toLocaleString()} samples processed</span>
+                </div>
+              </div>
+            )}
+            
+            {/* Train/Val Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+              <div className="bg-gradient-to-br from-purple-600/20 to-purple-800/20 backdrop-blur-lg rounded-xl p-3 border border-purple-500/30">
+                <div className="text-xs text-purple-300 mb-1">Train Loss</div>
+                <div className="text-lg sm:text-2xl font-bold">
+                  {trainLoss !== null ? trainLoss.toFixed(4) : '—'}
+                </div>
               </div>
               
-              <div className="bg-gradient-to-br from-red-600/20 to-red-800/20 backdrop-blur-lg rounded-xl p-5 border border-red-500/30">
-                <div className="text-sm text-red-300 mb-1">Loss</div>
-                <div className="text-3xl font-bold">
+              <div className="bg-gradient-to-br from-pink-600/20 to-pink-800/20 backdrop-blur-lg rounded-xl p-3 border border-pink-500/30">
+                <div className="text-xs text-pink-300 mb-1">Val Loss</div>
+                <div className="text-lg sm:text-2xl font-bold">
+                  {valLoss !== null ? valLoss.toFixed(4) : '—'}
+                </div>
+              </div>
+              
+              <div className="bg-gradient-to-br from-green-600/20 to-green-800/20 backdrop-blur-lg rounded-xl p-3 border border-green-500/30">
+                <div className="text-xs text-green-300 mb-1">Train Acc</div>
+                <div className="text-lg sm:text-2xl font-bold">
+                  {trainAccuracy.toFixed(1)}%
+                </div>
+              </div>
+              
+              <div className="bg-gradient-to-br from-blue-600/20 to-blue-800/20 backdrop-blur-lg rounded-xl p-3 border border-blue-500/30">
+                <div className="text-xs text-blue-300 mb-1">Val Acc</div>
+                <div className="text-lg sm:text-2xl font-bold">
+                  {valAccuracy.toFixed(1)}%
+                </div>
+              </div>
+            </div>
+            
+            {/* Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+              <div className="bg-gradient-to-br from-purple-600/20 to-purple-800/20 backdrop-blur-lg rounded-xl p-3 sm:p-5 border border-purple-500/30">
+                <div className="text-xs sm:text-sm text-purple-300 mb-1">Epoch</div>
+                <div className="text-xl sm:text-3xl font-bold">{epochs}</div>
+              </div>
+              
+              <div className="bg-gradient-to-br from-red-600/20 to-red-800/20 backdrop-blur-lg rounded-xl p-3 sm:p-5 border border-red-500/30">
+                <div className="text-xs sm:text-sm text-red-300 mb-1">Loss</div>
+                <div className="text-xl sm:text-3xl font-bold">
                   {currentLoss !== null ? currentLoss.toFixed(6) : '—'}
                 </div>
               </div>
               
-              <div className="bg-gradient-to-br from-blue-600/20 to-blue-800/20 backdrop-blur-lg rounded-xl p-5 border border-blue-500/30">
-                <div className="text-sm text-blue-300 mb-1">Batch Size</div>
-                <div className="text-3xl font-bold">{currentBatch}</div>
+              <div className="bg-gradient-to-br from-green-600/20 to-green-800/20 backdrop-blur-lg rounded-xl p-3 sm:p-5 border border-purple-500/30">
+                <div className="text-xs sm:text-sm text-green-300 mb-1">Best Loss</div>
+                <div className="text-xl sm:text-3xl font-bold">
+                  {bestLoss !== Infinity ? bestLoss.toFixed(6) : '—'}
+                </div>
+              </div>
+              
+              <div className="bg-gradient-to-br from-blue-600/20 to-blue-800/20 backdrop-blur-lg rounded-xl p-3 sm:p-5 border border-blue-500/30">
+                <div className="text-xs sm:text-sm text-blue-300 mb-1">Samples</div>
+                <div className="text-xl sm:text-3xl font-bold">{samplesProcessed.toLocaleString()}</div>
               </div>
             </div>
+            
+            {/* Training Progress Bar */}
+            {isTraining && currentLoss !== null && (
+              <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-slate-300 font-medium">Training Progress</span>
+                  <span className="text-xs text-slate-400">
+                    {currentLoss < 0.1 ? 'Converging...' : currentLoss < 0.5 ? 'Learning...' : 'Starting...'}
+                  </span>
+                </div>
+                <div className="w-full bg-slate-700/50 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-green-500 transition-all duration-500"
+                    style={{ 
+                      width: `${Math.min((1 - Math.min(currentLoss, 1)) * 100, 100)}%` 
+                    }}
+                  ></div>
+                </div>
+                <div className="flex justify-between text-xs text-slate-500 mt-1">
+                  <span>Loss: {currentLoss.toFixed(6)}</span>
+                  <span>Target: &lt; 0.001</span>
+                </div>
+              </div>
+            )}
 
             {/* Network Visualization */}
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                <Brain className="w-5 h-5 text-purple-400" />
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 sm:p-6 border border-white/20 relative">
+              {isTraining && (
+                <div className="absolute top-3 right-3 flex items-center gap-2 bg-green-500/20 border border-green-500/50 rounded-full px-3 py-1">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-xs text-green-300 font-semibold">Training...</span>
+                </div>
+              )}
+              <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-2">
+                <Brain className="w-4 h-4 sm:w-5 sm:h-5 text-purple-400" />
                 Network Visualization
               </h2>
               
               {activations.length > 0 ? (
-                <div className="flex justify-around items-center min-h-[300px]">
+                <div className="flex justify-around items-center min-h-[200px] sm:min-h-[300px] overflow-x-auto">
                   {layers.map((layer, layerIdx) => (
-                    <div key={layerIdx} className="flex flex-col items-center gap-3">
-                      <div className="text-xs text-slate-400 mb-2">
+                    <div key={layerIdx} className="flex flex-col items-center gap-2 sm:gap-3 min-w-[60px] sm:min-w-auto">
+                      <div className="text-[10px] sm:text-xs text-slate-400 mb-1 sm:mb-2 font-semibold">
                         {layer.type === 'input' ? 'Input' : 
                          layer.type === 'output' ? 'Output' : 
                          `Hidden ${layerIdx}`}
                       </div>
-                      {activations[layerIdx]?.map((activation, neuronIdx) => (
-                        <div
-                          key={neuronIdx}
-                          className="w-12 h-12 rounded-full flex items-center justify-center text-xs font-mono border-2 border-white/30 shadow-lg transition-all"
-                          style={{
-                            backgroundColor: `rgba(${activation > 0 ? '34, 197, 94' : '239, 68, 68'}, ${0.3 + Math.min(Math.abs(activation), 1) * 0.7})`
-                          }}
-                        >
-                          {activation.toFixed(2)}
-                        </div>
-                      ))}
+                      {activations[layerIdx]?.map((activation, neuronIdx) => {
+                        const absVal = Math.abs(activation);
+                        const intensity = Math.min(absVal, 1);
+                        const isPositive = activation > 0;
+                        
+                        return (
+                          <div
+                            key={neuronIdx}
+                            className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-mono border-2 shadow-lg transition-all duration-300"
+                            style={{
+                              backgroundColor: isPositive 
+                                ? `rgba(34, 197, 94, ${0.2 + intensity * 0.8})` 
+                                : `rgba(239, 68, 68, ${0.2 + intensity * 0.8})`,
+                              borderColor: isPositive 
+                                ? `rgba(34, 197, 94, ${0.5 + intensity * 0.5})`
+                                : `rgba(239, 68, 68, ${0.5 + intensity * 0.5})`,
+                              boxShadow: isTraining 
+                                ? `0 0 ${10 + intensity * 20}px ${isPositive ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)'}` 
+                                : 'none',
+                              transform: isTraining ? `scale(${1 + intensity * 0.1})` : 'scale(1)'
+                            }}
+                          >
+                            <span className="text-white font-bold drop-shadow">{activation.toFixed(2)}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="min-h-[300px] flex items-center justify-center text-slate-400">
+                <div className="min-h-[200px] sm:min-h-[300px] flex items-center justify-center text-slate-400">
                   Start training to see network activations
                 </div>
               )}
@@ -764,16 +1352,17 @@ const DeeplexLearningPlatform = () => {
             <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
               <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-blue-400" />
-                Predictions vs Targets
+                Validation Samples
               </h2>
               
-              {weights.length > 0 && biases.length > 0 && dataPoints.length > 0 ? (
+              {weights.length > 0 && biases.length > 0 && dataPoints && dataPoints.length > 0 ? (
                 <div className="space-y-3">
-                  {dataPoints.map((point, idx) => {
+                  {/* Show only first 5 samples as validation set */}
+                  {dataPoints.slice(0, 5).map((point, idx) => {
                     const forward = forwardPass(point.input);
                     const prediction = forward.activations[forward.activations.length - 1] || [0];
                     const target = point.target;
-                    const error = Math.abs((prediction[0] || 0) - (target[0] || 0));
+                    const error = prediction.reduce((sum, p, i) => sum + Math.abs(p - (target[i] || 0)), 0) / prediction.length;
                     const errorPercent = Math.min(error * 100, 100);
                     
                     return (
@@ -785,44 +1374,61 @@ const DeeplexLearningPlatform = () => {
                           </span>
                         </div>
                         
-                        <div className="grid grid-cols-2 gap-3 mb-2">
+                        <div className="grid grid-cols-2 gap-3 mb-3">
                           <div>
                             <div className="text-xs text-blue-300 mb-1">Input</div>
-                            <div className="text-sm font-mono text-slate-200">
+                            <div className="text-xs font-mono text-slate-200">
                               [{point.input.map(v => v.toFixed(2)).join(', ')}]
                             </div>
                           </div>
                           <div>
-                            <div className="text-xs text-purple-300 mb-1">Target</div>
-                            <div className="text-sm font-mono text-slate-200">
-                              [{target.map(v => v.toFixed(2)).join(', ')}]
+                            <div className="text-xs text-red-300 mb-1 flex items-center justify-between">
+                              <span>Error</span>
+                              <span className="font-bold">{error.toFixed(4)}</span>
+                            </div>
+                            <div className="relative h-2 bg-slate-900 rounded-full overflow-hidden">
+                              <div 
+                                className="absolute left-0 top-0 h-full bg-gradient-to-r from-green-500 to-red-500 transition-all duration-300"
+                                style={{ width: `${Math.min(errorPercent, 100)}%` }}
+                              />
                             </div>
                           </div>
                         </div>
                         
-                        <div>
-                          <div className="text-xs text-green-300 mb-1">Prediction</div>
-                          <div className="text-sm font-mono text-slate-200 mb-2">
-                            [{prediction.map(v => v.toFixed(4)).join(', ')}]
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-purple-900/30 border border-purple-500/30 rounded p-2">
+                            <div className="text-xs text-purple-300 mb-1 font-semibold">Target</div>
+                            <div className="text-sm font-mono text-white">
+                              [{target.map(v => v.toFixed(3)).join(', ')}]
+                            </div>
+                          </div>
+                          <div className="bg-green-900/30 border border-green-500/30 rounded p-2">
+                            <div className="text-xs text-green-300 mb-1 font-semibold">Prediction</div>
+                            <div className="text-sm font-mono text-white">
+                              [{prediction.map(v => v.toFixed(3)).join(', ')}]
+                            </div>
                           </div>
                         </div>
                         
-                        {/* Visual error bar */}
-                        <div className="relative h-2 bg-slate-900 rounded-full overflow-hidden">
-                          <div 
-                            className="absolute left-0 top-0 h-full bg-gradient-to-r from-green-500 to-red-500 transition-all duration-300"
-                            style={{ width: `${errorPercent}%` }}
-                          />
-                        </div>
-                        <div className="text-xs text-slate-400 mt-1">
-                          {errorPercent < 1 ? 'Excellent match!' : 
-                           errorPercent < 5 ? 'Good prediction' : 
-                           errorPercent < 20 ? 'Learning in progress' : 
-                           'Needs more training'}
+                        <div className="text-xs text-center mt-2" style={{
+                          color: errorPercent < 1 ? '#22c55e' : 
+                                 errorPercent < 5 ? '#84cc16' : 
+                                 errorPercent < 20 ? '#eab308' : '#ef4444'
+                        }}>
+                          {errorPercent < 1 ? '✓ Excellent match!' : 
+                           errorPercent < 5 ? '○ Good prediction' : 
+                           errorPercent < 20 ? '◐ Learning...' : 
+                           '◯ Needs training'}
                         </div>
                       </div>
                     );
                   })}
+                  
+                  {dataPoints.length > 5 && (
+                    <div className="text-center text-xs text-slate-400 py-2 border-t border-slate-700">
+                      Showing 5 of {dataPoints.length} samples • Using remaining {dataPoints.length - 5} for training
+                    </div>
+                  )}
                   
                   <div className="text-xs text-slate-400 mt-4 leading-relaxed">
                     This view shows you exactly how well the network is predicting each training example. Watch the error bars shrink as the network learns. The color gradient from green to red visually represents the prediction accuracy, with green indicating the prediction is very close to the target and red showing larger errors that need correction.
@@ -835,6 +1441,78 @@ const DeeplexLearningPlatform = () => {
               )}
             </div>
 
+            {/* Confusion Matrix - Only for Classification */}
+            {layers.length > 0 && layers[layers.length - 1] > 1 && confusionMatrix.length > 0 && (
+              <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <Target className="w-5 h-5 text-purple-400" />
+                  Confusion Matrix (Validation Set)
+                </h2>
+                
+                <div className="overflow-x-auto">
+                  <div className="inline-block min-w-full">
+                    <div className="text-xs text-slate-400 mb-3">
+                      Shows how often each predicted class matches the actual class. Diagonal = correct predictions.
+                    </div>
+                    
+                    <div className="grid gap-1" style={{ 
+                      gridTemplateColumns: `auto repeat(${confusionMatrix.length}, minmax(50px, 1fr))` 
+                    }}>
+                      {/* Header Row */}
+                      <div className="text-xs text-slate-400 p-2"></div>
+                      {confusionMatrix.map((_, i) => (
+                        <div key={`header-${i}`} className="text-xs text-center text-purple-300 font-semibold p-2">
+                          Pred {i}
+                        </div>
+                      ))}
+                      
+                      {/* Matrix Rows */}
+                      {confusionMatrix.map((row, i) => {
+                        const maxVal = Math.max(...confusionMatrix.flat());
+                        return (
+                          <React.Fragment key={`row-${i}`}>
+                            <div className="text-xs text-blue-300 font-semibold p-2 flex items-center">
+                              Act {i}
+                            </div>
+                            {row.map((val, j) => {
+                              const intensity = maxVal > 0 ? val / maxVal : 0;
+                              const isCorrect = i === j;
+                              return (
+                                <div 
+                                  key={`cell-${i}-${j}`}
+                                  className={`p-3 rounded text-center text-sm font-mono transition-all ${
+                                    isCorrect 
+                                      ? 'border-2 border-green-400/50' 
+                                      : 'border border-slate-600/30'
+                                  }`}
+                                  style={{
+                                    backgroundColor: isCorrect
+                                      ? `rgba(34, 197, 94, ${0.1 + intensity * 0.6})`
+                                      : `rgba(148, 163, 184, ${0.05 + intensity * 0.4})`,
+                                  }}
+                                >
+                                  <div className={isCorrect ? 'text-green-200 font-bold' : 'text-slate-300'}>
+                                    {val}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                    
+                    <div className="text-xs text-slate-400 mt-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 bg-green-500/40 border-2 border-green-400/50 rounded"></div>
+                        <span>Diagonal cells = Correct predictions</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Weight Distribution Visualization */}
             <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
               <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
@@ -845,7 +1523,11 @@ const DeeplexLearningPlatform = () => {
               {weights.length > 0 ? (
                 <div className="space-y-4">
                   {weights.map((layerWeights, idx) => {
-                    const maxWeight = Math.max(...layerWeights.map(Math.abs), 0.01);
+                    // Use reduce instead of Math.max(...array) to avoid stack overflow with large arrays
+                    const maxWeight = Math.max(
+                      layerWeights.reduce((max, w) => Math.max(max, Math.abs(w)), 0),
+                      0.01
+                    );
                     const avgWeight = layerWeights.reduce((sum, w) => sum + Math.abs(w), 0) / layerWeights.length;
                     
                     return (
@@ -900,14 +1582,14 @@ const DeeplexLearningPlatform = () => {
             </div>
 
             {/* Loss History */}
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-green-400" />
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 sm:p-6 border border-white/20">
+              <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-green-400" />
                 Training Progress
               </h2>
               
               {lossHistory.length > 0 ? (
-                <div className="h-48 bg-slate-900/50 rounded-lg p-4 flex items-end gap-0.5">
+                <div className="h-32 sm:h-48 bg-slate-900/50 rounded-lg p-2 sm:p-4 flex items-end gap-0.5">
                   {lossHistory.map((loss, i) => {
                     const maxLoss = Math.max(...lossHistory, 0.01);
                     const height = (loss / maxLoss) * 100;
@@ -924,27 +1606,27 @@ const DeeplexLearningPlatform = () => {
                   })}
                 </div>
               ) : (
-                <div className="h-48 bg-slate-900/50 rounded-lg p-4 flex items-center justify-center text-slate-400">
+                <div className="h-32 sm:h-48 bg-slate-900/50 rounded-lg p-4 flex items-center justify-center text-slate-400 text-xs sm:text-sm">
                   Loss history will appear here during training
                 </div>
               )}
               
-              <div className="mt-4 text-xs text-slate-400">
+              <div className="mt-3 sm:mt-4 text-[10px] sm:text-xs text-slate-400">
                 This chart shows how the loss decreases as the network learns. A downward trend indicates successful learning, where the optimizer is finding better parameter values that minimize the prediction error on your training data.
               </div>
             </div>
 
             {/* Educational Info */}
-            <div className="bg-gradient-to-br from-indigo-600/10 to-purple-600/10 backdrop-blur-lg rounded-xl p-6 border border-indigo-500/20">
-              <h3 className="text-lg font-semibold mb-3 text-indigo-300">Understanding Your Configuration</h3>
-              <div className="text-sm text-slate-300 space-y-2 leading-relaxed">
+            <div className="bg-gradient-to-br from-indigo-600/10 to-purple-600/10 backdrop-blur-lg rounded-xl p-4 sm:p-6 border border-indigo-500/20">
+              <h3 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3 text-indigo-300">Understanding Your Configuration</h3>
+              <div className="text-xs sm:text-sm text-slate-300 space-y-2 leading-relaxed">
                 <p>
                   You have configured a neural network with {layers.length} layers, using the {optimizer === 'adam' ? 'Adam' : 'SGD'} optimizer. {optimizer === 'adam' ? 'Adam adapts the learning rate for each parameter based on estimates of first and second moments of the gradients, which often leads to faster convergence.' : momentum > 0 ? `With momentum set to ${momentum.toFixed(2)}, the optimizer remembers past gradients to accelerate training in consistent directions and dampen oscillations.` : 'Without momentum, each update is based solely on the current gradient.'}
                 </p>
-                <p>
+                <p className="hidden sm:block">
                   Your batch size of {batchSize} means the network processes {batchSize} {batchSize === 1 ? 'sample' : 'samples'} before updating its parameters. Smaller batches provide noisier gradient estimates but update more frequently, while larger batches give more accurate gradients but update less often. The learning rate of {learningRate.toFixed(4)} controls how much the parameters change with each update. Too high and training becomes unstable, too low and convergence takes forever.
                 </p>
-                <p>
+                <p className="hidden md:block">
                   Each layer applies an activation function after computing weighted sums. {layers.filter(l => l.activation === 'relu').length > 0 && 'ReLU (Rectified Linear Unit) outputs the input if positive, otherwise zero, providing non-linearity while being computationally efficient.'} {layers.filter(l => l.activation === 'sigmoid').length > 0 && 'Sigmoid squashes values between 0 and 1, useful for binary classification.'} {layers.filter(l => l.activation === 'tanh').length > 0 && 'Tanh squashes values between -1 and 1, often converging faster than sigmoid.'}
                 </p>
               </div>
