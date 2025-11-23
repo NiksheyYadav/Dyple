@@ -563,14 +563,18 @@ const DeeplexLearningPlatform = () => {
       addLog(`🎯 Reached target of ${targetEpochs} epochs! Training stopped.`, 'success');
     }
     
-    // Calculate train/val metrics every 10 epochs
-    if (newEpoch % 10 === 0) {
-      const valData = dataPoints.slice(0, Math.max(5, Math.floor(dataPoints.length * 0.2)));
-      const trainData = dataPoints.slice(Math.max(5, Math.floor(dataPoints.length * 0.2)));
-      
+    // Calculate train/val metrics EVERY epoch for live updates
+    const valData = dataPoints.slice(0, Math.max(5, Math.floor(dataPoints.length * 0.2)));
+    const trainData = dataPoints.slice(Math.max(5, Math.floor(dataPoints.length * 0.2)));
+    
+    // Use setTimeout to ensure state updates are processed
+    setTimeout(() => {
       calculateMetrics(trainData, false);
       calculateMetrics(valData, true);
-      
+    }, 0);
+    
+    // Log every 5 epochs to avoid spam
+    if (newEpoch % 5 === 0) {
       addLog(`Epoch ${newEpoch}: Loss = ${avgLoss.toFixed(6)}, Best = ${Math.min(avgLoss, bestLoss).toFixed(6)}`, avgLoss < 0.01 ? 'success' : 'info');
     }
     
