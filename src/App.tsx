@@ -88,7 +88,7 @@ class Adam extends Optimizer {
   }
 }
 
-const DeeplexLearningPlatform = () => {
+const NeuralForge = () => {
   // Network architecture configuration
   const [layers, setLayers] = useState([
     { size: 2, activation: 'linear', type: 'input' },
@@ -440,10 +440,10 @@ const DeeplexLearningPlatform = () => {
               <Brain className="w-12 h-12 text-purple-400" />
               <div>
                 <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                  Deeplex Learning Platform
+                  NeuralForge
                 </h1>
                 <p className="text-purple-300 text-sm mt-1">
-                  Configure, train, and visualize neural networks with complete control
+                  Interactive Neural Network Learning Platform
                 </p>
               </div>
             </div>
@@ -956,4 +956,4 @@ const DeeplexLearningPlatform = () => {
   );
 };
 
-export default DeeplexLearningPlatform;
+export default NeuralForge;

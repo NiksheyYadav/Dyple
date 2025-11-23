@@ -1,16 +1,24 @@
 {
-  "name": "dyple",
+  "name": "neuralforge",
   "version": "1.0.0",
   "type": "module",
+  "description": "Interactive neural network visualization and training platform built with React and TypeScript",
+  "keywords": [
+    "neural-network",
+    "machine-learning",
+    "deep-learning",
+    "visualization",
+    "education",
+    "react",
+    "typescript"
+  ],
+  "author": "Nikshey Yadav",
+  "license": "ISC",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "dependencies": {
     "lucide-react": "^0.554.0",
     "react": "^19.2.0",
