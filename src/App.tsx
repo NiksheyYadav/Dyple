@@ -3,8 +3,8 @@ import { Brain, Database, Pause, Play, Plus, RotateCcw, Settings, Sparkles, Targ
 import React, { useEffect, useRef, useState } from 'react';
 
 // Gemini API configuration
-const GEMINI_API_KEY = 'AIzaSyDzLsQkUI3xB__KEZws1I0PWmuMyyJqERg';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent';
 
 // Activation functions with their derivatives
 const activations = {
@@ -253,6 +253,8 @@ const DeeplexLearningPlatform = () => {
   const [suggestedArchitecture, setSuggestedArchitecture] = useState(null);
   const [aiSuggestionLoading, setAiSuggestionLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState(null);
+  const [gpuAcceleration, setGpuAcceleration] = useState(false);
+  const [gpuAvailable, setGpuAvailable] = useState(false);
   
   const optimizerRef = useRef(null);
   const intervalRef = useRef(null);
@@ -268,6 +270,28 @@ const DeeplexLearningPlatform = () => {
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [trainingLogs]);
+
+  // Check GPU availability on mount
+  useEffect(() => {
+    const checkGPU = async () => {
+      if ('gpu' in navigator) {
+        try {
+          const adapter = await (navigator as any).gpu.requestAdapter();
+          if (adapter) {
+            setGpuAvailable(true);
+            addLog('🚀 GPU detected and available for acceleration!', 'success');
+          }
+        } catch (error) {
+          setGpuAvailable(false);
+          addLog('GPU not available, using CPU', 'info');
+        }
+      } else {
+        setGpuAvailable(false);
+        addLog('WebGPU not supported in this browser', 'info');
+      }
+    };
+    checkGPU();
+  }, []);
 
   // Initialize network weights based on architecture
   const initializeNetwork = () => {
@@ -1249,6 +1273,51 @@ Format: {"layers": [{"size": number, "activation": "relu|sigmoid|tanh|linear", "
                     <span>500</span>
                     <span>1000</span>
                   </div>
+                </div>
+                
+                {/* GPU Acceleration Toggle */}
+                <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Zap className={`w-4 h-4 ${gpuAvailable ? 'text-green-400' : 'text-slate-500'}`} />
+                      <label className="text-sm text-slate-300">
+                        GPU Acceleration
+                      </label>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (gpuAvailable) {
+                          setGpuAcceleration(!gpuAcceleration);
+                          addLog(
+                            !gpuAcceleration ? '🚀 GPU acceleration enabled!' : 'GPU acceleration disabled',
+                            !gpuAcceleration ? 'success' : 'info'
+                          );
+                        }
+                      }}
+                      disabled={!gpuAvailable || isTraining}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        gpuAcceleration && gpuAvailable
+                          ? 'bg-green-600'
+                          : 'bg-slate-600'
+                      } ${!gpuAvailable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          gpuAcceleration && gpuAvailable ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  {!gpuAvailable && (
+                    <p className="text-xs text-slate-500 mt-2">
+                      WebGPU not available in this browser
+                    </p>
+                  )}
+                  {gpuAvailable && gpuAcceleration && (
+                    <p className="text-xs text-green-400 mt-2">
+                      ⚡ Training will use GPU for faster computation
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

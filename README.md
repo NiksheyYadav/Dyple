@@ -44,8 +44,25 @@
 ### ⚡ Advanced Optimization Algorithms
 - **SGD with Momentum**: Classic stochastic gradient descent with configurable momentum (0-0.99)
 - **Adam Optimizer**: Adaptive learning rates with automatic bias correction
+- **RMSprop**: Root mean square propagation for adaptive learning
+- **Adagrad**: Adaptive gradient algorithm
+- **AdamW**: Adam with weight decay regularization
+- **Nadam**: Nesterov-accelerated Adam
 - **Adjustable Learning Rate**: Fine-tune learning rate from 0.0001 to 0.1
 - **Mini-Batch Training**: Configure batch sizes to balance training speed and stability
+
+### 🚀 GPU Acceleration
+- **WebGPU Support**: Automatic detection of GPU availability
+- **Hardware Acceleration**: Enable GPU for faster training computations
+- **Fallback to CPU**: Seamless operation when GPU is not available
+- **Real-time Toggle**: Switch between CPU and GPU during setup
+
+### 🤖 AI-Powered Suggestions
+- **Gemini AI Integration**: Get intelligent recommendations for network architecture
+- **Optimal Hyperparameters**: AI suggests learning rate, batch size, and epochs
+- **Smart Architecture**: Receive layer size and activation function recommendations
+- **Dataset Analysis**: AI analyzes your data to provide tailored suggestions
+- **One-Click Apply**: Instantly apply all AI recommendations
 
 ### 📊 Real-Time Visualizations
 - **Network Activations**: Visual representation of neuron activations across all layers
@@ -104,12 +121,24 @@ Before you begin, ensure you have the following installed:
    npm install
    ```
 
-3. **Start the development server**
+3. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   ```
+   
+   Edit `.env` and add your Gemini API key:
+   ```
+   VITE_GEMINI_API_KEY=your_api_key_here
+   ```
+   
+   > Get your free API key at [Google AI Studio](https://makersuite.google.com/app/apikey)
+
+4. **Start the development server**
    ```bash
    npm run dev
    ```
 
-4. **Open your browser**
+5. **Open your browser**
    
    Navigate to `http://localhost:5173` and start exploring!
 
