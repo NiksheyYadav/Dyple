@@ -21,6 +21,8 @@
 
 **NeuralForge** is a comprehensive educational platform designed to demystify neural networks through interactive visualization and hands-on learning. Whether you're a student, educator, or AI enthusiast, NeuralForge provides an intuitive environment to build, train, and understand neural networks without writing a single line of code.
 
+> **Note**: The repository is currently hosted under the name "Dyple" but the application has been rebranded to "NeuralForge" for better clarity and memorability.
+
 ### What Makes NeuralForge Special?
 
 - **Zero Code Required**: Build and train neural networks entirely through an intuitive UI
@@ -235,7 +237,7 @@ npm run preview
 ## 📁 Project Structure
 
 ```
-Dyple/
+NeuralForge/
 ├── src/
 │   ├── App.tsx           # Main application component with neural network logic
 │   ├── main.tsx          # Application entry point
