@@ -2,6 +2,10 @@
 import { Brain, Database, Pause, Play, Plus, RotateCcw, Settings, Sparkles, Target, Trash2, TrendingUp, Zap } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
+// Gemini API configuration
+const GEMINI_API_KEY = 'AIzaSyDzLsQkUI3xB__KEZws1I0PWmuMyyJqERg';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+
 // Activation functions with their derivatives
 const activations = {
   relu: {
@@ -247,6 +251,8 @@ const DeeplexLearningPlatform = () => {
   const [confusionMatrix, setConfusionMatrix] = useState([]);
   const [targetEpochs, setTargetEpochs] = useState(100);
   const [suggestedArchitecture, setSuggestedArchitecture] = useState(null);
+  const [aiSuggestionLoading, setAiSuggestionLoading] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState(null);
   
   const optimizerRef = useRef(null);
   const intervalRef = useRef(null);
@@ -718,6 +724,208 @@ const DeeplexLearningPlatform = () => {
     }
   };
   
+  // Get AI-powered suggestions from Gemini
+  const getGeminiSuggestions = async () => {
+    if (!selectedDataset || !datasetInfo) {
+      addLog('Please load a dataset first', 'warning');
+      return;
+    }
+    
+    setAiSuggestionLoading(true);
+    addLog('Asking Gemini AI for optimal settings...', 'info');
+    
+    try {
+      const prompt = `You are an expert in deep learning and neural network architecture design. Analyze this dataset and provide optimal network configuration:
+
+Dataset Information:
+- Name: ${datasetInfo.name || selectedDataset}
+- Samples: ${dataPoints.length}
+- Input features: ${dataPoints[0]?.input?.length || 0}
+- Output targets: ${dataPoints[0]?.target?.length || 0}
+- Task type: ${dataPoints[0]?.target?.length > 1 ? 'Multi-output' : dataPoints[0]?.target?.[0] > 0 && dataPoints[0]?.target?.[0] < 1 ? 'Regression/Classification' : 'Regression'}
+
+Current Architecture:
+${layers.map((l, i) => `Layer ${i + 1}: ${l.size} neurons, ${l.activation} activation`).join('\\n')}
+
+Provide a JSON response with:
+1. Recommended layer sizes and activations
+2. Best optimizer (sgd, adam, rmsprop, adagrad, adamw, nadam)
+3. Optimal learning rate
+4. Recommended batch size
+5. Suggested number of epochs
+6. Brief reasoning (2-3 sentences)
+
+Format: {"layers": [{"size": number, "activation": "relu|sigmoid|tanh|linear", "type": "input|hidden|output"}], "optimizer": "adam", "learningRate": 0.001, "batchSize": 32, "epochs": 100, "reasoning": "explanation"}`;
+
+      const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }]
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (!aiText) {
+        throw new Error('No response from Gemini');
+      }
+      
+      // Extract JSON from response (handle markdown code blocks)
+      const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('Invalid response format');
+      }
+      
+      const suggestion = JSON.parse(jsonMatch[0]);
+      setAiSuggestion(suggestion);
+      addLog('✨ AI suggestions received!', 'success');
+      
+    } catch (error) {
+      console.error('Gemini API error:', error);
+      addLog(`AI suggestion failed: ${error.message}`, 'error');
+    } finally {
+      setAiSuggestionLoading(false);
+    }
+  };
+  
+  // Apply AI suggestions
+  const applyAiSuggestions = () => {
+    if (!aiSuggestion) return;
+    
+    if (aiSuggestion.layers) {
+      setLayers(aiSuggestion.layers);
+    }
+    if (aiSuggestion.optimizer) {
+      setOptimizer(aiSuggestion.optimizer);
+    }
+    if (aiSuggestion.learningRate) {
+      setLearningRate(aiSuggestion.learningRate);
+    }
+    if (aiSuggestion.batchSize) {
+      setBatchSize(aiSuggestion.batchSize);
+    }
+    if (aiSuggestion.epochs) {
+      setTargetEpochs(aiSuggestion.epochs);
+    }
+    
+    addLog('✨ Applied AI-recommended settings', 'success');
+    setTimeout(() => initializeNetwork(), 100);
+    setAiSuggestion(null);
+  };
+  
+  // Get AI-powered suggestions from Gemini
+  const getGeminiSuggestions = async () => {
+    if (!selectedDataset || !datasetInfo) {
+      addLog('Please load a dataset first', 'warning');
+      return;
+    }
+    
+    setAiSuggestionLoading(true);
+    addLog('Asking Gemini AI for optimal settings...', 'info');
+    
+    try {
+      const prompt = `You are an expert in deep learning and neural network architecture design. Analyze this dataset and provide optimal network configuration:
+
+Dataset Information:
+- Name: ${datasetInfo.name || selectedDataset}
+- Samples: ${dataPoints.length}
+- Input features: ${dataPoints[0]?.input?.length || 0}
+- Output targets: ${dataPoints[0]?.target?.length || 0}
+- Task type: ${dataPoints[0]?.target?.length > 1 ? 'Multi-output' : dataPoints[0]?.target?.[0] > 0 && dataPoints[0]?.target?.[0] < 1 ? 'Regression/Classification' : 'Regression'}
+
+Current Architecture:
+${layers.map((l, i) => `Layer ${i + 1}: ${l.size} neurons, ${l.activation} activation`).join('\n')}
+
+Provide a JSON response with:
+1. Recommended layer sizes and activations
+2. Best optimizer (sgd, adam, rmsprop, adagrad, adamw, nadam)
+3. Optimal learning rate
+4. Recommended batch size
+5. Suggested number of epochs
+6. Brief reasoning (2-3 sentences)
+
+Format: {"layers": [{"size": number, "activation": "relu|sigmoid|tanh|linear", "type": "input|hidden|output"}], "optimizer": "adam", "learningRate": 0.001, "batchSize": 32, "epochs": 100, "reasoning": "explanation"}`;
+
+      const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }]
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Gemini API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (!aiText) {
+        throw new Error('No response from Gemini');
+      }
+      
+      // Extract JSON from response (handle markdown code blocks)
+      const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('Invalid response format');
+      }
+      
+      const suggestion = JSON.parse(jsonMatch[0]);
+      setAiSuggestion(suggestion);
+      addLog('✨ AI suggestions received!', 'success');
+      
+    } catch (error) {
+      console.error('Gemini API error:', error);
+      addLog(`AI suggestion failed: ${error.message}`, 'error');
+    } finally {
+      setAiSuggestionLoading(false);
+    }
+  };
+  
+  // Apply AI suggestions
+  const applyAiSuggestions = () => {
+    if (!aiSuggestion) return;
+    
+    if (aiSuggestion.layers) {
+      setLayers(aiSuggestion.layers);
+    }
+    if (aiSuggestion.optimizer) {
+      setOptimizer(aiSuggestion.optimizer);
+    }
+    if (aiSuggestion.learningRate) {
+      setLearningRate(aiSuggestion.learningRate);
+    }
+    if (aiSuggestion.batchSize) {
+      setBatchSize(aiSuggestion.batchSize);
+    }
+    if (aiSuggestion.epochs) {
+      setTargetEpochs(aiSuggestion.epochs);
+    }
+    
+    addLog('✨ Applied AI-recommended settings', 'success');
+    setTimeout(() => initializeNetwork(), 100);
+    setAiSuggestion(null);
+  };
+  
   // Load dataset from JSON file
   const loadDataset = async (datasetId) => {
     if (!datasetId) {
@@ -855,8 +1063,67 @@ const DeeplexLearningPlatform = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {/* Configuration Panel */}
           <div className="space-y-4 sm:space-y-6">
+            {/* AI Suggestion Button */}
+            <button
+              onClick={getGeminiSuggestions}
+              disabled={aiSuggestionLoading || !selectedDataset}
+              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl px-4 py-3 font-semibold transition-all flex items-center justify-center gap-2"
+            >
+              <Sparkles className={`w-5 h-5 ${aiSuggestionLoading ? 'animate-pulse' : ''}`} />
+              {aiSuggestionLoading ? 'Asking Gemini AI...' : '✨ Get AI Suggestions'}
+            </button>
+            
+            {/* AI Suggestions Panel */}
+            {aiSuggestion && (
+              <div className="bg-gradient-to-br from-purple-600/20 to-pink-600/20 backdrop-blur-lg rounded-xl p-4 border border-purple-500/40">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-purple-400" />
+                    <h3 className="text-sm font-semibold">Gemini AI Recommendations</h3>
+                  </div>
+                  <button
+                    onClick={applyAiSuggestions}
+                    className="px-3 py-1 bg-purple-600 hover:bg-purple-700 rounded-lg text-xs font-medium transition-colors"
+                  >
+                    Apply All
+                  </button>
+                </div>
+                <p className="text-xs text-slate-300 mb-3">
+                  {aiSuggestion.reasoning}
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-slate-800/50 rounded p-2">
+                    <div className="text-slate-400">Optimizer</div>
+                    <div className="font-semibold text-purple-300">{aiSuggestion.optimizer?.toUpperCase()}</div>
+                  </div>
+                  <div className="bg-slate-800/50 rounded p-2">
+                    <div className="text-slate-400">Learning Rate</div>
+                    <div className="font-semibold text-purple-300">{aiSuggestion.learningRate}</div>
+                  </div>
+                  <div className="bg-slate-800/50 rounded p-2">
+                    <div className="text-slate-400">Batch Size</div>
+                    <div className="font-semibold text-purple-300">{aiSuggestion.batchSize}</div>
+                  </div>
+                  <div className="bg-slate-800/50 rounded p-2">
+                    <div className="text-slate-400">Epochs</div>
+                    <div className="font-semibold text-purple-300">{aiSuggestion.epochs}</div>
+                  </div>
+                </div>
+                {aiSuggestion.layers && (
+                  <div className="mt-3 space-y-1">
+                    <div className="text-xs text-slate-400 font-semibold">Architecture:</div>
+                    {aiSuggestion.layers.map((layer, i) => (
+                      <div key={i} className="text-xs text-slate-300">
+                        Layer {i + 1}: {layer.size} neurons ({layer.activation})
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            
             {/* Architecture Suggestion Panel */}
-            {suggestedArchitecture && (
+            {suggestedArchitecture && !aiSuggestion && (
               <div className="bg-gradient-to-br from-purple-600/20 to-pink-600/20 backdrop-blur-lg rounded-xl p-4 border border-purple-500/40">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-2">
