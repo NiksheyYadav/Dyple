@@ -1,14 +1,15 @@
 {
-  "name": "neuralforge",
+  "name": "dyple",
   "version": "1.0.0",
   "type": "module",
-  "description": "Interactive neural network visualization and training platform built with React and TypeScript",
+  "description": "Unified AI operating system for creators, students, developers, and enterprises",
   "keywords": [
-    "neural-network",
-    "machine-learning",
-    "deep-learning",
-    "visualization",
-    "education",
+    "ai",
+    "playground",
+    "workspace",
+    "developer-platform",
+    "chatbot",
+    "ai-tools",
     "react",
     "typescript"
   ],
@@ -20,12 +21,26 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@nestjs/bullmq": "^11.0.4",
+    "@nestjs/common": "^11.1.9",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^11.1.9",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/passport": "^11.0.5",
+    "@nestjs/swagger": "^11.2.3",
+    "@nestjs/typeorm": "^11.0.0",
+    "appwrite": "^21.5.0",
+    "aws-sdk": "^2.1693.0",
+    "clsx": "^2.1.1",
     "lucide-react": "^0.554.0",
+    "nestjs": "^0.0.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^6.30.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.17",
+    "@types/node": "^25.0.0",
     "@types/react": "^19.2.6",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
